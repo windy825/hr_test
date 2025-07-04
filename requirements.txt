@@ -1,0 +1,8 @@
+streamlit
+openai
+pdfkit
+matplotlib
+wordcloud
+textblob
+pandas
+PyPDF2
