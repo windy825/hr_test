@@ -1,6 +1,6 @@
 # smart_candidate_matcher_app.py
 import streamlit as st
-import openai
+from openai import OpenAI
 import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -15,7 +15,9 @@ api_key = st.sidebar.text_input('OpenAI API Key', type='password')
 if not api_key:
     st.warning('OpenAI API Key를 입력해주세요.')
     st.stop()
-openai.api_key = api_key
+
+# OpenAI 클라이언트 초기화
+client = OpenAI(api_key=api_key)
 
 st.title('Smart Candidate Matcher')
 
@@ -44,8 +46,8 @@ if uploaded_files:
     jd_text = st.text_area('직무기술서(JD) 텍스트 입력', height=150)
 
     if st.button('매칭 시작'):
-        # JD 임베딩 생성 (v1+ OpenAI API 방식)
-        jd_resp = openai.embeddings.create(
+        # JD 임베딩 생성
+        jd_resp = client.embeddings.create(
             input=jd_text,
             model='text-embedding-ada-002'
         )
@@ -53,16 +55,18 @@ if uploaded_files:
 
         scores, features_list = [], []
         for idx, row in df.iterrows():
+            # AI 분석 요청
             prompt = (
                 f"다음 이력서를 분석하여 핵심 역량, 경험 키워드, 소프트 스킬 3가지를 JSON 형식으로 반환해줘:\n{row[resume_col]}"
             )
-            resp = openai.ChatCompletion.create(
+            chat_resp = client.chat.completions.create(
                 model='gpt-4',
                 messages=[{'role': 'user', 'content': prompt}]
             )
-            feat = resp.choices[0].message.content if resp.choices else '{}'
+            feat = chat_resp.choices[0].message.content
 
-            emb_resp = openai.embeddings.create(
+            # 지원자 임베딩 및 유사도 계산
+            emb_resp = client.embeddings.create(
                 input=row[resume_col],
                 model='text-embedding-ada-002'
             )
