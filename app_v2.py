@@ -4,16 +4,11 @@ import PyPDF2
 import pandas as pd
 import plotly.express as px
 import json
-from io import BytesIO
-from email.message import EmailMessage
-from weasyprint import HTML
-import smtplib
 
-# --- 기본 설정 ---
 st.set_page_config(page_title="채용 적합도 분석기", layout="wide")
 st.title("✨ GPT 기반 채용 적합도 분석기")
 
-# --- API 키 입력 ---
+# API 입력
 st.sidebar.title("🔐 GPT API Key")
 api_key = st.sidebar.text_input("OpenAI API Key 입력", type="password")
 if not api_key:
@@ -21,7 +16,7 @@ if not api_key:
     st.stop()
 client = openai.OpenAI(api_key=api_key)
 
-# --- JD 및 가중치 입력 ---
+# JD + 가중치 설정
 st.sidebar.subheader("📌 JD 입력")
 jd_input = st.sidebar.text_area("JD 또는 인사담당자 메모")
 
@@ -33,26 +28,23 @@ weights = {
     "미래 잠재역량": st.sidebar.slider("미래 잠재력 중요도", 1, 5, 2),
 }
 
-# --- 업로드 및 옵션 ---
+# 파일 업로드
 uploaded_files = st.file_uploader("📄 자기소개서 업로드 (PDF 또는 TXT)", type=["pdf", "txt"], accept_multiple_files=True)
-email_enabled = st.checkbox("📧 리포트를 이메일로 발송하기")
-email_address = st.text_input("수신 이메일 주소", value="") if email_enabled else None
 
-# --- 텍스트 추출 함수 ---
 def extract_text(file):
     if file.type == "application/pdf":
         reader = PyPDF2.PdfReader(file)
         return "\n".join([page.extract_text() for page in reader.pages])
     return file.read().decode("utf-8")
 
-# --- HTML 리포트 템플릿 ---
+# HTML 리포트 템플릿
 def generate_html_report(results):
     html = """
     <html><head><style>
-    body { font-family: 'Nanum Gothic', sans-serif; margin: 40px; }
+    body { font-family: 'Nanum Gothic', sans-serif; margin: 40px; line-height: 1.6; }
     h1 { color: #2F4F4F; }
-    h2 { color: #4B9CD3; border-bottom: 1px solid #ccc; }
-    .section { margin-bottom: 30px; }
+    h2 { color: #4B9CD3; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+    .section { margin-bottom: 40px; }
     .label { font-weight: bold; color: #444; }
     ul { padding-left: 20px; }
     </style></head><body>
@@ -77,7 +69,6 @@ def generate_html_report(results):
     html += "</body></html>"
     return html
 
-# --- 분석 실행 ---
 results = []
 if st.button("📊 적합도 분석 실행") and uploaded_files and jd_input:
     for file in uploaded_files:
@@ -118,9 +109,10 @@ if st.button("📊 적합도 분석 실행") and uploaded_files and jd_input:
         except Exception as e:
             st.error(f"❌ {file.name} 분석 오류: {e}")
 
-# --- 결과 시각화 + 리포트 ---
 if results:
     st.success("✅ 분석 완료")
+
+    # 점수 계산 및 시각화
     score_data = []
     for r in results:
         score = (
@@ -134,27 +126,8 @@ if results:
     df = pd.DataFrame(score_data, columns=["지원자", "가중 점수"])
     st.plotly_chart(px.bar(df, x="지원자", y="가중 점수", color="지원자", text_auto=True), use_container_width=True)
 
-    # PDF 리포트 생성
+    # HTML 리포트 렌더링
     html = generate_html_report(results)
-    pdf_bytes = HTML(string=html).write_pdf()
-
-    # 다운로드 버튼
-    st.download_button("📥 디자인된 PDF 리포트 다운로드", data=pdf_bytes,
-                       file_name="채용_분석_리포트.pdf", mime="application/pdf")
-
-    # 이메일 전송
-    if email_enabled and email_address:
-        try:
-            msg = EmailMessage()
-            msg['Subject'] = '지원자 분석 리포트'
-            msg['From'] = 'noreply@example.com'
-            msg['To'] = email_address
-            msg.set_content("채용 분석 리포트를 첨부드립니다.")
-            msg.add_attachment(pdf_bytes, maintype='application', subtype='pdf', filename="채용_분석_리포트.pdf")
-            with smtplib.SMTP('smtp.example.com', 587) as server:
-                server.starttls()
-                server.login('noreply@example.com', 'password')  # 실 계정 필요
-                server.send_message(msg)
-            st.success("📧 이메일 발송 완료!")
-        except Exception as e:
-            st.error(f"이메일 발송 실패: {e}")
+    st.markdown("## 🖨️ 리포트 보기 및 PDF 저장 안내")
+    st.components.v1.html(html, height=1000, scrolling=True)
+    st.info("📄 리포트를 PDF로 저장하려면 브라우저에서 Ctrl+P (또는 ⌘+P) 를 눌러 'PDF로 저장'을 선택하세요.")
