@@ -153,7 +153,8 @@ if st.button("📊 전체 지원자 적합도 분석 실행") and uploaded_files
             ]
             for line in lines:
                 try:
-                pdf.cell(200, 10, txt=line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+                    encoded_line = line.encode('latin-1', 'replace').decode('latin-1')
+                    pdf.cell(200, 10, txt=encoded_line, ln=True)
             except:
                 pdf.cell(200, 10, txt="[문자 인코딩 오류로 내용 생략]", ln=True)
 
