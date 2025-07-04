@@ -12,12 +12,13 @@ import base64
 import numpy as np
 from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
+import os, requests
 
-# 페이지 설정
+# 📌 기본 설정
 st.set_page_config(page_title="채용 적합도 분석기", layout="wide")
 st.title("✨ GPT 기반 채용 적합도 분석기")
 
-# GPT API 입력
+# 🔐 API 입력
 st.sidebar.title("🔐 GPT API Key")
 api_key = st.sidebar.text_input("OpenAI API Key 입력", type="password")
 if not api_key:
@@ -25,7 +26,7 @@ if not api_key:
     st.stop()
 client = openai.OpenAI(api_key=api_key)
 
-# JD + 가중치
+# 📌 JD + 가중치
 st.sidebar.subheader("📌 JD 입력")
 jd_input = st.sidebar.text_area("JD 또는 인사담당자 메모")
 st.sidebar.subheader("⚖️ JD 중요도 가중치")
@@ -45,19 +46,26 @@ def extract_text(file):
         return "\n".join([page.extract_text() for page in reader.pages])
     return file.read().decode("utf-8")
 
-# 시각화 함수
 def to_base64(fig):
     buf = BytesIO()
     fig.savefig(buf, format="png", bbox_inches='tight')
     return base64.b64encode(buf.getvalue()).decode()
 
+# ✅ WordCloud (폰트 자동 다운로드)
 def generate_wordcloud(text):
-    wc = WordCloud(font_path="/usr/share/fonts/truetype/nanum/NanumGothic.ttf", background_color="white").generate(text)
+    font_path = "/tmp/NanumGothic.ttf"
+    if not os.path.exists(font_path):
+        url = "https://github.com/naver/nanumfont/releases/download/VER2.5/NanumGothic.ttf"
+        r = requests.get(url)
+        with open(font_path, "wb") as f:
+            f.write(r.content)
+    wc = WordCloud(font_path=font_path, background_color="white", width=600, height=300).generate(text)
     fig, ax = plt.subplots()
     ax.imshow(wc, interpolation="bilinear")
     ax.axis("off")
     return to_base64(fig)
 
+# ✅ Radar Chart
 def generate_radar_chart(labels, values):
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(r=values, theta=labels, fill='toself'))
@@ -66,6 +74,7 @@ def generate_radar_chart(labels, values):
     fig.write_image(buf, format="png", width=500, height=400)
     return base64.b64encode(buf.getvalue()).decode()
 
+# ✅ 종합 요약 시각화
 def generate_summary_charts(results):
     names = [r["파일명"] for r in results]
     scores = [r["전반적 적합도 점수"] for r in results]
@@ -97,7 +106,7 @@ def generate_summary_charts(results):
 
     return heatmap_b64, avg_b64
 
-# GPT 분석 실행
+# ✅ GPT 분석 실행
 results = []
 if st.button("📊 적합도 분석 실행") and uploaded_files and jd_input:
     for file in uploaded_files:
@@ -137,13 +146,12 @@ if st.button("📊 적합도 분석 실행") and uploaded_files and jd_input:
         except Exception as e:
             st.error(f"{file.name} 분석 실패: {e}")
 
-# 리포트 출력
+# ✅ HTML 보고서 렌더링
 if results:
     st.success("✅ 분석 완료")
+    st.markdown("## 📑 분석 리포트 (PDF 저장 가능)")
 
-    st.markdown("## 📑 분석 리포트 (PDF로 저장 가능)")
     html = "<html><body><h1>채용 적합도 분석 리포트</h1>"
-
     for r in results:
         radar_labels = list(r["역량별 평가 코멘트"].keys())
         radar_values = [5 if "우수" in v or "높음" in v else 3 if "보통" in v else 1 for v in r["역량별 평가 코멘트"].values()]
@@ -165,7 +173,7 @@ if results:
     html += "<h2>📊 전체 지원자 종합 분석</h2>"
     html += f"<h4>지원자별 지표 히트맵</h4><img src='data:image/png;base64,{heatmap_b64}' width='700'/>"
     html += f"<h4>역량 평균 점수</h4><img src='data:image/png;base64,{avg_b64}' width='600'/>"
-
     html += "</body></html>"
-    st.components.v1.html(html, height=2000, scrolling=True)
-    st.info("Ctrl+P 또는 ⌘+P 를 눌러 PDF로 저장하세요.")
+
+    st.components.v1.html(html, height=2200, scrolling=True)
+    st.info("💾 PDF 저장: 브라우저에서 Ctrl+P 또는 ⌘+P를 눌러 'PDF로 저장' 선택")
