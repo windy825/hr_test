@@ -14,7 +14,7 @@ import PyPDF2
 # GPT API Key 입력 (일회용)
 st.sidebar.title("🔐 GPT API Key 입력")
 api_key = st.sidebar.text_input("OpenAI API Key", type="password")
-openai.api_key = api_key
+client = openai.OpenAI(api_key=api_key)
 
 ####################
 # 1. 채용: JD 기반 이력서 평가기
@@ -42,8 +42,11 @@ def resume_evaluator():
         이력서:
         {resume_text}
         """
-        response = openai.ChatCompletion.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-        result = response["choices"][0]["message"]["content"]
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        result = response.choices[0].message.content
         st.markdown(result)
         if st.download_button("📥 평가결과 PDF 다운로드", data=result, file_name="resume_result.pdf"):
             pdfkit.from_string(result, "resume_result.pdf")
@@ -59,8 +62,11 @@ def learning_recommender():
 
     if st.button("학습 로드맵 추천"):
         prompt = f"직무: {job}, 수준: {level}, 집중역량: {focus}에 맞춘 학습 경로를 단계별로 설계해줘"
-        response = openai.ChatCompletion.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-        st.markdown(response["choices"][0]["message"]["content"])
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        st.markdown(response.choices[0].message.content)
 
 ####################
 # 3. 평가: 피드백 문장 생성기
@@ -72,8 +78,11 @@ def performance_feedback():
 
     if st.button("피드백 문장 생성"):
         prompt = f"항목: {', '.join(trait)}\n사례: {example}\n공감 피드백 작성"
-        response = openai.ChatCompletion.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-        st.markdown(response["choices"][0]["message"]["content"])
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        st.markdown(response.choices[0].message.content)
 
 ####################
 # 4. 보상: 보상 제안 생성기
@@ -86,8 +95,11 @@ def compensation_planner():
 
     if st.button("보상 제안 생성"):
         prompt = f"직무: {role}, 경력: {exp}, 지역: {region}에 적절한 보상안 제안"
-        response = openai.ChatCompletion.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-        st.markdown(response["choices"][0]["message"]["content"])
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        st.markdown(response.choices[0].message.content)
 
 ####################
 # 5. 조직문화: 설문 요약 + 감정분석 + 워드클라우드
@@ -100,8 +112,11 @@ def culture_survey_analyzer():
     if st.button("설문 분석 실행"):
         if analysis_type == "요약":
             prompt = f"다음 내용을 요약해줘:\n{survey}"
-            response = openai.ChatCompletion.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-            st.markdown(response["choices"][0]["message"]["content"])
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            st.markdown(response.choices[0].message.content)
         elif analysis_type == "감정분석":
             blob = TextBlob(survey)
             st.write(f"긍정도 점수: {blob.sentiment.polarity:.2f}")
@@ -122,8 +137,11 @@ def csv_analyzer():
         st.write("업로드된 데이터:", df.head())
         if st.button("GPT 요약 생성"):
             prompt = f"다음 데이터로 인사이트 요약해줘:\n{df.to_string()}"
-            response = openai.ChatCompletion.create(model="gpt-4o", messages=[{"role": "user", "content": prompt}])
-            st.markdown(response["choices"][0]["message"]["content"])
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            st.markdown(response.choices[0].message.content)
 
 ####################
 # 메인 실행
