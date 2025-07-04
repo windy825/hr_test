@@ -7,14 +7,20 @@ import PyPDF2
 import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 import re
-import textwrap
+import json
 
 st.set_page_config(page_title="채용 적합도 분석기", layout="wide")
 
 # --- GPT API KEY 입력 ---
 st.sidebar.title("🔐 GPT API Key")
 api_key = st.sidebar.text_input("OpenAI API Key 입력", type="password")
+
+if not api_key:
+    st.warning("🔑 왼쪽 사이드바에 API Key를 입력해주세요.")
+    st.stop()
+
 client = openai.OpenAI(api_key=api_key)
 
 # --- 앱 UI 구성 ---
@@ -51,30 +57,35 @@ if st.button("📊 적합도 분석 실행") and resume_text and jd_input:
         {resume_text}
 
         다음 항목에 대해 분석해줘:
-        1. JD에 부합하는 핵심 경험과 키워드
-        2. 전반적 적합도 점수 (100점 만점)
-        3. 강점과 우려되는 점
-        4. 종합 의견 요약
+        1. 핵심 경험과 키워드 (리스트 형태)
+        2. 전반적 적합도 점수 (100점 만점 숫자)
+        3. 강점 (리스트) / 우려사항 (리스트)
+        4. 종합 의견 요약 (문단)
         5. 추천 여부 (강력 추천 / 가능 / 보통 / 비추천)
-        결과는 JSON 형식으로 항목별 출력해줘.
+        6. 미래 잠재역량 또는 성장 가능성 (문장 2~3줄)
+        결과는 JSON 형식으로 반환하고, 각 항목은 key로 명시해줘.
         """
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        result_text = response.choices[0].message.content
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            result_text = response.choices[0].message.content
+        except Exception as e:
+            st.error("❌ GPT API 호출 중 오류 발생: " + str(e))
+            st.stop()
 
     try:
-        result_json = eval(result_text)
+        result_json = json.loads(result_text) if isinstance(result_text, str) else result_text
         st.success("✅ 분석 완료")
 
-        # 점수 시각화
-        score = result_json.get("2. 전반적 적합도 점수 (100점 만점)", 0)
+        # 적합도 점수 시각화
+        score = result_json.get("전반적 적합도 점수", 0)
         fig = go.Figure(go.Indicator(
-            mode = "gauge+number+delta",
+            mode = "gauge+number",
             value = score,
             domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "적합도 점수", 'font': {'size': 24}},
+            title = {'text': "전반적 적합도 점수", 'font': {'size': 24}},
             gauge = {
                 'axis': {'range': [0, 100]},
                 'bar': {'color': "#4B9CD3"},
@@ -85,12 +96,32 @@ if st.button("📊 적합도 분석 실행") and resume_text and jd_input:
             }))
         st.plotly_chart(fig, use_container_width=True)
 
-        # 주요 분석 결과
-        st.markdown("### 🧠 분석 요약")
-        st.markdown(f"**1. JD 키워드/경험 적합성:**\n\n{result_json.get('1. JD에 부합하는 핵심 경험과 키워드', '')}")
-        st.markdown(f"**3. 강점과 우려되는 점:**\n\n{result_json.get('3. 강점과 우려되는 점', '')}")
-        st.markdown(f"**4. 종합 의견 요약:**\n\n{result_json.get('4. 종합 의견 요약', '')}")
-        st.markdown(f"**5. 추천 여부:** ⭐️ {result_json.get('5. 추천 여부 (강력 추천 / 가능 / 보통 / 비추천)', '')}")
+        # 키워드 레이더 차트
+        keywords = result_json.get("핵심 경험과 키워드", [])
+        if keywords:
+            df_kw = pd.DataFrame({"역량 키워드": keywords, "가중치": [1]*len(keywords)})
+            st.markdown("### 🔍 JD 핵심 경험 및 키워드")
+            st.dataframe(df_kw, use_container_width=True)
+
+        # 강점/우려 radar chart
+        strength = result_json.get("강점과 우려되는 점", {}).get("강점", [])
+        weakness = result_json.get("강점과 우려되는 점", {}).get("우려되는 점", [])
+
+        radar_labels = strength + weakness
+        radar_scores = [8]*len(strength) + [3]*len(weakness)
+        radar_df = pd.DataFrame(dict(역량=radar_labels, 점수=radar_scores))
+
+        if not radar_df.empty:
+            fig_radar = px.line_polar(radar_df, r='점수', theta='역량', line_close=True,
+                                      color_discrete_sequence=['#636EFA'])
+            st.markdown("### 📊 강점 vs 우려사항 분석")
+            st.plotly_chart(fig_radar, use_container_width=True)
+
+        # 종합 분석 리포트
+        st.markdown("### 🧠 종합 분석 리포트")
+        st.markdown(f"**📌 종합 요약:**\n\n{result_json.get('종합 의견 요약', '')}")
+        st.markdown(f"**🌱 미래 잠재역량 진단:**\n\n{result_json.get('미래 잠재역량 또는 성장 가능성', '')}")
+        st.markdown(f"**🏁 추천 여부:** ⭐️ {result_json.get('추천 여부', '')}")
 
     except Exception as e:
         st.error("❌ GPT 응답 파싱 중 오류가 발생했습니다.")
