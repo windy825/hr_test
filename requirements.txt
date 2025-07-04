@@ -7,3 +7,4 @@ textblob
 pandas
 PyPDF2
 plotly
+fpdf 
