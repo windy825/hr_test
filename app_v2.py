@@ -1,5 +1,5 @@
 # HR 채용 적합도 분석기 (JD vs 자기소개서 분석)
-# GPT 기반 분석 + 시각화 + 점수화 리포트 생성
+# GPT 기반 분석 + 시각화 + 점수화 리포트 생성 + PDF 저장 + 다중 지원자 비교 + 가중치 반영 + 이메일 전송
 
 import streamlit as st
 import openai
@@ -10,6 +10,11 @@ import plotly.graph_objects as go
 import plotly.express as px
 import re
 import json
+import base64
+from io import BytesIO
+from fpdf import FPDF
+import smtplib
+from email.message import EmailMessage
 
 st.set_page_config(page_title="채용 적합도 분석기", layout="wide")
 
@@ -23,108 +28,152 @@ if not api_key:
 
 client = openai.OpenAI(api_key=api_key)
 
-# --- 앱 UI 구성 ---
-st.markdown("""
-    <h1 style='color:#4B9CD3;'>✨ GPT 기반 채용 적합도 분석기</h1>
-    <h4 style='color:gray;'>자기소개서 + JD 입력 → GPT가 자동 분석 + 점수화 + 시각화</h4>
-""", unsafe_allow_html=True)
+# --- JD 및 가중치 입력 ---
+st.sidebar.subheader("📌 JD 입력")
+jd_input = st.sidebar.text_area("JD 또는 인사담당자 메모")
 
-col1, col2 = st.columns(2)
+st.sidebar.subheader("⚖️ JD 중요도 가중치")
+weights = {
+    "핵심 경험과 키워드": st.sidebar.slider("경험 키워드 중요도", 1, 5, 3),
+    "강점": st.sidebar.slider("강점 항목 중요도", 1, 5, 3),
+    "우려사항": st.sidebar.slider("우려사항 민감도 (높을수록 감점)", 1, 5, 3),
+    "미래 잠재역량": st.sidebar.slider("미래 잠재력 중요도", 1, 5, 2),
+}
 
-with col1:
-    st.subheader("📄 지원자 자기소개서 업로드")
-    resume_file = st.file_uploader("PDF 또는 텍스트 파일 업로드", type=["pdf", "txt"])
-    resume_text = ""
-    if resume_file:
-        if resume_file.type == "application/pdf":
-            reader = PyPDF2.PdfReader(resume_file)
-            for page in reader.pages:
-                resume_text += page.extract_text()
-        else:
-            resume_text = resume_file.read().decode("utf-8")
+st.title("✨ GPT 기반 채용 적합도 분석기")
 
-with col2:
-    st.subheader("🧾 JD 또는 인사담당자 메모 입력")
-    jd_input = st.text_area("지원자에게 기대하는 내용이나 JD를 입력하세요")
+uploaded_files = st.file_uploader("📄 여러 명의 지원자 자기소개서 업로드 (PDF 또는 TXT)", type=["pdf", "txt"], accept_multiple_files=True)
 
-if st.button("📊 적합도 분석 실행") and resume_text and jd_input:
-    with st.spinner("GPT가 분석 중입니다..."):
+email_enabled = st.checkbox("📧 리포트를 이메일로 발송하기")
+email_address = st.text_input("수신 이메일 주소", value="") if email_enabled else None
+
+
+def extract_text(file):
+    if file.type == "application/pdf":
+        reader = PyPDF2.PdfReader(file)
+        return "\n".join([page.extract_text() for page in reader.pages])
+    else:
+        return file.read().decode("utf-8")
+
+results = []
+
+if st.button("📊 전체 지원자 적합도 분석 실행") and uploaded_files and jd_input:
+    for file in uploaded_files:
+        resume_text = extract_text(file)
+
         prompt = f"""
-        아래는 한 명의 지원자의 자기소개서이며, 아래 JD에 얼마나 적합한 인재인지 분석해줘. 
         JD 또는 기대사항: {jd_input}
 
         자기소개서:
         {resume_text}
 
-        다음 항목에 대해 분석해줘:
-        1. 핵심 경험과 키워드 (리스트 형태)
-        2. 전반적 적합도 점수 (100점 만점 숫자)
-        3. 강점 (리스트) / 우려사항 (리스트)
-        4. 종합 의견 요약 (문단)
-        5. 추천 여부 (강력 추천 / 가능 / 보통 / 비추천)
-        6. 미래 잠재역량 또는 성장 가능성 (문장 2~3줄)
-        결과는 JSON 형식으로 반환하고, 각 항목은 key로 명시해줘.
+        다음 항목에 대해 JSON 형식으로 분석해줘:
+        {{
+        "핵심 경험과 키워드": [...],
+        "전반적 적합도 점수": 정수,
+        "강점": [...],
+        "우려사항": [...],
+        "종합 의견 요약": "...",
+        "추천 여부": "...",
+        "미래 잠재역량 또는 성장 가능성": "..."
+        }}
         """
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "user", "content": prompt}]
             )
-            result_text = response.choices[0].message.content
+            content = response.choices[0].message.content.strip()
+            json_start = content.find('{')
+            json_data = content[json_start:]
+            result = json.loads(json_data)
+            result['파일명'] = file.name
+            results.append(result)
         except Exception as e:
-            st.error("❌ GPT API 호출 중 오류 발생: " + str(e))
-            st.stop()
+            st.error(f"❌ {file.name} 분석 중 오류 발생: {str(e)}")
 
-    try:
-        result_json = json.loads(result_text) if isinstance(result_text, str) else result_text
-        st.success("✅ 분석 완료")
+    if results:
+        st.success("✅ 전체 지원자 분석 완료")
 
-        # 적합도 점수 시각화
-        score = result_json.get("전반적 적합도 점수", 0)
-        fig = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = score,
-            domain = {'x': [0, 1], 'y': [0, 1]},
-            title = {'text': "전반적 적합도 점수", 'font': {'size': 24}},
-            gauge = {
-                'axis': {'range': [0, 100]},
-                'bar': {'color': "#4B9CD3"},
-                'steps' : [
-                    {'range': [0, 60], 'color': '#ffcccc'},
-                    {'range': [60, 80], 'color': '#ffe066'},
-                    {'range': [80, 100], 'color': '#b3ffb3'}],
-            }))
-        st.plotly_chart(fig, use_container_width=True)
+        scores = []
+        for r in results:
+            raw_score = r.get("전반적 적합도 점수", 0)
+            penalty = len(r.get("우려사항", [])) * weights["우려사항"]
+            final_score = raw_score * weights["핵심 경험과 키워드"] + len(r.get("강점", [])) * weights["강점"] + weights["미래 잠재역량"] * 2 - penalty
+            scores.append((r["파일명"], final_score))
 
-        # 키워드 레이더 차트
-        keywords = result_json.get("핵심 경험과 키워드", [])
-        if keywords:
-            df_kw = pd.DataFrame({"역량 키워드": keywords, "가중치": [1]*len(keywords)})
-            st.markdown("### 🔍 JD 핵심 경험 및 키워드")
-            st.dataframe(df_kw, use_container_width=True)
+        score_df = pd.DataFrame(scores, columns=["지원자", "가중 적합도 점수"])
+        fig_all = px.bar(score_df, x="지원자", y="가중 적합도 점수", color="지원자",
+                         title="📈 지원자별 가중 적합도 비교", text_auto=True)
+        st.plotly_chart(fig_all, use_container_width=True)
 
-        # 강점/우려 radar chart
-        strength = result_json.get("강점과 우려되는 점", {}).get("강점", [])
-        weakness = result_json.get("강점과 우려되는 점", {}).get("우려되는 점", [])
+        # 추가 시각화 - 적합도 Gauge + 항목별 분포
+        for res in results:
+            st.subheader(f"📋 {res['파일명']} 상세 분석")
+            st.markdown(f"**✅ 적합도 점수:** {res['전반적 적합도 점수']}점 | **추천 여부:** {res['추천 여부']}")
+            gauge_fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=res['전반적 적합도 점수'],
+                title={'text': "적합도 점수"},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "#4B9CD3"},
+                    'steps': [
+                        {'range': [0, 50], 'color': '#FFDDDD'},
+                        {'range': [50, 75], 'color': '#FFE799'},
+                        {'range': [75, 100], 'color': '#C4F4C4'}
+                    ]
+                }
+            ))
+            st.plotly_chart(gauge_fig, use_container_width=True)
 
-        radar_labels = strength + weakness
-        radar_scores = [8]*len(strength) + [3]*len(weakness)
-        radar_df = pd.DataFrame(dict(역량=radar_labels, 점수=radar_scores))
+            # 항목별 레이더 차트
+            radar_labels = ['강점', '우려사항', '키워드 수', '잠재역량 점수(고정값)']
+            radar_values = [len(res.get('강점', [])), len(res.get('우려사항', [])), len(res.get('핵심 경험과 키워드', [])), 3]
+            radar_df = pd.DataFrame(dict(항목=radar_labels, 점수=radar_values))
+            radar_fig = px.line_polar(radar_df, r='점수', theta='항목', line_close=True, title="📊 항목별 역량 분석")
+            st.plotly_chart(radar_fig, use_container_width=True)
 
-        if not radar_df.empty:
-            fig_radar = px.line_polar(radar_df, r='점수', theta='역량', line_close=True,
-                                      color_discrete_sequence=['#636EFA'])
-            st.markdown("### 📊 강점 vs 우려사항 분석")
-            st.plotly_chart(fig_radar, use_container_width=True)
+        # PDF 저장 및 이메일은 동일
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        for res in results:
+            lines = [
+                f"지원자: {res['파일명']}",
+                f"적합도 점수: {res.get('전반적 적합도 점수')}점",
+                f"추천 여부: {res.get('추천 여부')}",
+                "핵심 경험 및 키워드:", *res.get('핵심 경험과 키워드', []),
+                "강점:", *res.get('강점', []),
+                "우려사항:", *res.get('우려사항', []),
+                f"미래 잠재역량: {res.get('미래 잠재역량 또는 성장 가능성')}",
+                "종합 의견 요약:", res.get('종합 의견 요약'),
+                "------------------------"
+            ]
+            for line in lines:
+                pdf.cell(200, 10, txt=line, ln=True)
 
-        # 종합 분석 리포트
-        st.markdown("### 🧠 종합 분석 리포트")
-        st.markdown(f"**📌 종합 요약:**\n\n{result_json.get('종합 의견 요약', '')}")
-        st.markdown(f"**🌱 미래 잠재역량 진단:**\n\n{result_json.get('미래 잠재역량 또는 성장 가능성', '')}")
-        st.markdown(f"**🏁 추천 여부:** ⭐️ {result_json.get('추천 여부', '')}")
+        pdf_output = BytesIO()
+        pdf.output(pdf_output)
+        b64_pdf = base64.b64encode(pdf_output.getvalue()).decode()
+        href_pdf = f'<a href="data:application/pdf;base64,{b64_pdf}" download="채용_분석_리포트.pdf">📥 PDF 리포트 다운로드</a>'
+        st.markdown(href_pdf, unsafe_allow_html=True)
 
-    except Exception as e:
-        st.error("❌ GPT 응답 파싱 중 오류가 발생했습니다.")
-        st.text(result_text)
+        if email_enabled and email_address:
+            try:
+                msg = EmailMessage()
+                msg['Subject'] = '지원자 분석 리포트'
+                msg['From'] = 'noreply@example.com'
+                msg['To'] = email_address
+                msg.set_content("채용 분석 리포트를 첨부드립니다.")
+                msg.add_attachment(pdf_output.getvalue(), maintype='application', subtype='pdf', filename="채용_분석_리포트.pdf")
+
+                with smtplib.SMTP('smtp.example.com', 587) as server:
+                    server.starttls()
+                    server.login('noreply@example.com', 'password')
+                    server.send_message(msg)
+                st.success("📧 이메일 발송 완료!")
+            except Exception as e:
+                st.error(f"이메일 발송 실패: {e}")
 else:
-    st.info("👈 왼쪽에서 자기소개서와 JD를 입력하고 실행을 눌러주세요!")
+    st.info("👈 JD 입력 및 지원자 파일 업로드 후 '적합도 분석 실행'을 눌러주세요")
