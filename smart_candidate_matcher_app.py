@@ -49,7 +49,7 @@ if uploaded_files:
             input=jd_text,
             model='text-embedding-ada-002'
         )
-        jd_embed = jd_resp['data'][0]['embedding']
+        jd_embed = jd_resp.data[0].embedding
 
         scores, features_list = [], []
         for idx, row in df.iterrows():
@@ -66,7 +66,7 @@ if uploaded_files:
                 input=row[resume_col],
                 model='text-embedding-ada-002'
             )
-            emb = emb_resp['data'][0]['embedding']
+            emb = emb_resp.data[0].embedding
             sim = cosine_similarity([jd_embed], [emb])[0][0]
 
             scores.append(sim)
