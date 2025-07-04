@@ -44,11 +44,12 @@ if uploaded_files:
     jd_text = st.text_area('직무기술서(JD) 텍스트 입력', height=150)
 
     if st.button('매칭 시작'):
-        # JD 임베딩 생성
-        jd_embed = openai.Embedding.create(
+        # JD 임베딩 생성 (v1+ OpenAI API 방식)
+        jd_resp = openai.embeddings.create(
             input=jd_text,
             model='text-embedding-ada-002'
-        )['data'][0]['embedding']
+        )
+        jd_embed = jd_resp['data'][0]['embedding']
 
         scores, features_list = [], []
         for idx, row in df.iterrows():
@@ -61,10 +62,11 @@ if uploaded_files:
             )
             feat = resp.choices[0].message.content if resp.choices else '{}'
 
-            emb = openai.Embedding.create(
+            emb_resp = openai.embeddings.create(
                 input=row[resume_col],
                 model='text-embedding-ada-002'
-            )['data'][0]['embedding']
+            )
+            emb = emb_resp['data'][0]['embedding']
             sim = cosine_similarity([jd_embed], [emb])[0][0]
 
             scores.append(sim)
