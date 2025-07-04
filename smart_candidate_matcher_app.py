@@ -70,8 +70,16 @@ if files and jd and run:
     for i,row in df.iterrows():
         emb = client.embeddings.create(input=row['text'], model='text-embedding-ada-002').data[0].embedding
         sims.append(cosine_similarity([jd_emb],[emb])[0][0])
-        resp = client.chat.completions.create(model='gpt-4', messages=[{'role':'user','content':f"이 이력서의 핵심 역량, 경험 키워드, 소프트 스킬 3가지 JSON으로 요약:
-{row['text']}"}])
+        resp = client.chat.completions.create(
+    model='gpt-4',
+    messages=[{
+        'role': 'user',
+        'content': (
+            f"이 이력서의 핵심 역량, 경험 키워드, 소프트 스킬 3가지 JSON으로 요약:
+{row['text']}"
+        )
+    }]
+)
         try: feats.append(json.loads(resp.choices[0].message.content))
         except: feats.append({})
         progress.progress((i+1)/n)
