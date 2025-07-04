@@ -18,7 +18,7 @@ import os, requests
 st.set_page_config(page_title="채용 적합도 분석기", layout="wide")
 st.title("✨ GPT 기반 채용 적합도 분석기")
 
-# 🔐 API 입력
+# 🔐 GPT API 입력
 st.sidebar.title("🔐 GPT API Key")
 api_key = st.sidebar.text_input("OpenAI API Key 입력", type="password")
 if not api_key:
@@ -26,7 +26,7 @@ if not api_key:
     st.stop()
 client = openai.OpenAI(api_key=api_key)
 
-# 📌 JD + 가중치
+# 📌 JD + 가중치 입력
 st.sidebar.subheader("📌 JD 입력")
 jd_input = st.sidebar.text_area("JD 또는 인사담당자 메모")
 st.sidebar.subheader("⚖️ JD 중요도 가중치")
@@ -37,7 +37,7 @@ weights = {
     "미래 잠재역량": st.sidebar.slider("미래 잠재력 중요도", 1, 5, 2),
 }
 
-# 파일 업로드
+# 📄 자기소개서 업로드
 uploaded_files = st.file_uploader("📄 자기소개서 업로드 (PDF 또는 TXT)", type=["pdf", "txt"], accept_multiple_files=True)
 
 def extract_text(file):
@@ -51,19 +51,36 @@ def to_base64(fig):
     fig.savefig(buf, format="png", bbox_inches='tight')
     return base64.b64encode(buf.getvalue()).decode()
 
-# ✅ WordCloud (폰트 자동 다운로드)
+# ✅ WordCloud (한글 폰트 자동 다운로드 포함)
 def generate_wordcloud(text):
     font_path = "/tmp/NanumGothic.ttf"
-    if not os.path.exists(font_path):
-        url = "https://github.com/naver/nanumfont/releases/download/VER2.5/NanumGothic.ttf"
-        r = requests.get(url)
+    font_url = "https://github.com/naver/nanumfont/releases/download/VER2.5/NanumGothic.ttf"
+
+    if os.path.exists(font_path):
+        try:
+            os.remove(font_path)
+        except:
+            pass
+
+    try:
+        response = requests.get(font_url)
+        response.raise_for_status()
         with open(font_path, "wb") as f:
-            f.write(r.content)
-    wc = WordCloud(font_path=font_path, background_color="white", width=600, height=300).generate(text)
-    fig, ax = plt.subplots()
-    ax.imshow(wc, interpolation="bilinear")
-    ax.axis("off")
-    return to_base64(fig)
+            f.write(response.content)
+    except Exception as e:
+        raise RuntimeError(f"폰트 다운로드 실패: {e}")
+
+    try:
+        wc = WordCloud(font_path=font_path, background_color="white", width=600, height=300).generate(text)
+        fig, ax = plt.subplots()
+        ax.imshow(wc, interpolation="bilinear")
+        ax.axis("off")
+        buf = BytesIO()
+        plt.savefig(buf, format="png", bbox_inches='tight')
+        plt.close()
+        return base64.b64encode(buf.getvalue()).decode()
+    except Exception as e:
+        raise RuntimeError(f"WordCloud 생성 실패: {e}")
 
 # ✅ Radar Chart
 def generate_radar_chart(labels, values):
@@ -74,14 +91,13 @@ def generate_radar_chart(labels, values):
     fig.write_image(buf, format="png", width=500, height=400)
     return base64.b64encode(buf.getvalue()).decode()
 
-# ✅ 종합 요약 시각화
+# ✅ 종합 시각화
 def generate_summary_charts(results):
     names = [r["파일명"] for r in results]
     scores = [r["전반적 적합도 점수"] for r in results]
     strengths = [len(r["강점"]) for r in results]
     weaknesses = [len(r["우려사항"]) for r in results]
 
-    # 히트맵
     df = pd.DataFrame({
         "파일명": names,
         "적합도": scores,
@@ -93,7 +109,6 @@ def generate_summary_charts(results):
     sns.heatmap(normed, annot=df.values, fmt=".0f", cmap="YlGnBu", xticklabels=df.columns, yticklabels=names, ax=ax1)
     heatmap_b64 = to_base64(fig1)
 
-    # 평균 역량 점수
     all_scores = {}
     for r in results:
         for k, v in r["역량별 평가 코멘트"].items():
@@ -175,5 +190,5 @@ if results:
     html += f"<h4>역량 평균 점수</h4><img src='data:image/png;base64,{avg_b64}' width='600'/>"
     html += "</body></html>"
 
-    st.components.v1.html(html, height=2200, scrolling=True)
-    st.info("💾 PDF 저장: 브라우저에서 Ctrl+P 또는 ⌘+P를 눌러 'PDF로 저장' 선택")
+    st.components.v1.html(html, height=2400, scrolling=True)
+    st.info("💾 PDF 저장: 브라우저에서 Ctrl+P 또는 ⌘+P를 눌러 'PDF로 저장'")
