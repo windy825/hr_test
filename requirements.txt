@@ -8,3 +8,5 @@ seaborn
 wordcloud 
 scikit-learn 
 kaleido
+numpy
+statsmodels
