@@ -6,3 +6,4 @@ wordcloud
 textblob
 pandas
 PyPDF2
+plotly
