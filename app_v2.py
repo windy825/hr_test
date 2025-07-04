@@ -85,7 +85,8 @@ if st.button("📊 전체 지원자 적합도 분석 실행") and uploaded_files
             )
             content = response.choices[0].message.content.strip()
             json_start = content.find('{')
-            json_data = content[json_start:]
+            json_end = content.rfind('}') + 1
+            json_data = content[json_start:json_end]
             result = json.loads(json_data)
             result['파일명'] = file.name
             results.append(result)
