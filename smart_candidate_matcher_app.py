@@ -19,13 +19,28 @@ openai.api_key = api_key
 
 st.title('Smart Candidate Matcher')
 
-# 이력서와 JD 파일 업로드
-uploaded = st.file_uploader('이력서와 JD 데이터 업로드 (CSV/Excel)', type=['csv', 'xlsx'])
-if uploaded:
-    df = pd.read_csv(uploaded) if uploaded.name.endswith('.csv') else pd.read_excel(uploaded)
-    st.write('데이터 예시:', df.head())
+# 이력서 파일 업로드 (TXT or CSV)
+uploaded_files = st.file_uploader('이력서 업로드 (TXT 또는 CSV)', type=['txt', 'csv'], accept_multiple_files=True)
+if uploaded_files:
+    # CSV 파일 처리
+    csv_files = [f for f in uploaded_files if f.name.lower().endswith('.csv')]
+    if csv_files:
+        if len(csv_files) > 1:
+            st.warning('CSV 파일은 하나만 업로드 해주세요.')
+            st.stop()
+        df = pd.read_csv(csv_files[0])
+        resume_col = st.selectbox('이력서 텍스트 컬럼 선택', df.columns)
+    else:
+        # TXT 파일 여러 개 처리
+        resumes = []
+        for f in uploaded_files:
+            text = f.getvalue().decode('utf-8', errors='ignore')
+            resumes.append({'resume_text': text, 'filename': f.name})
+        df = pd.DataFrame(resumes)
+        resume_col = 'resume_text'
 
-    resume_col = st.selectbox('이력서 텍스트 컬럼 선택', df.columns)
+    st.write('이력서 개수:', len(df))
+    st.write('데이터 예시:', df.head())
     jd_text = st.text_area('직무기술서(JD) 텍스트 입력', height=150)
 
     if st.button('매칭 시작'):
@@ -37,7 +52,6 @@ if uploaded:
 
         scores, features_list = [], []
         for idx, row in df.iterrows():
-            # 이력서 특징 추출
             prompt = (
                 f"다음 이력서를 분석하여 핵심 역량, 경험 키워드, 소프트 스킬 3가지를 JSON 형식으로 반환해줘:\n{row[resume_col]}"
             )
@@ -47,7 +61,6 @@ if uploaded:
             )
             feat = resp.choices[0].message.content if resp.choices else '{}'
 
-            # 지원자 임베딩 및 유사도
             emb = openai.Embedding.create(
                 input=row[resume_col],
                 model='text-embedding-ada-002'
